@@ -8,12 +8,12 @@ import argparse
 from helpers import *
 from model import *
 
-def generate(decoder, prime_str='A', predict_len=100, temperature=0.8, cuda=False):
+def generate(decoder, prime_str='\n', predict_len=100, temperature=0.8, cuda=False):
     hidden = decoder.init_hidden(1)
     prime_input = Variable(char_tensor(prime_str).unsqueeze(0))
 
     if cuda:
-        hidden = hidden.cuda()
+        hidden = tuple(x.cuda() for x in hidden)
         prime_input = prime_input.cuda()
     predicted = prime_str
 
@@ -45,13 +45,22 @@ if __name__ == '__main__':
 # Parse command line arguments
     argparser = argparse.ArgumentParser()
     argparser.add_argument('filename', type=str)
-    argparser.add_argument('-p', '--prime_str', type=str, default='A')
+    argparser.add_argument('-p', '--prime_str', type=str, default='\n')
     argparser.add_argument('-l', '--predict_len', type=int, default=100)
     argparser.add_argument('-t', '--temperature', type=float, default=0.8)
     argparser.add_argument('--cuda', action='store_true')
     args = argparser.parse_args()
 
-    decoder = torch.load(args.filename)
+    # Initialize models and start training
+    decoder = CharRNN(
+        768*2,
+        768,
+        all_characters,
+        model="lstm",
+        n_layers=2
+    )
+
+    decoder.load_state_dict(torch.load(args.filename))
     del args.filename
     print(generate(decoder, **vars(args)))
 

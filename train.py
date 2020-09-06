@@ -16,14 +16,15 @@ from generate import *
 # Parse command line arguments
 argparser = argparse.ArgumentParser()
 argparser.add_argument('filename', type=str)
-argparser.add_argument('--model', type=str, default="gru")
-argparser.add_argument('--n_epochs', type=int, default=2000)
+argparser.add_argument('--model', type=str, default="lstm")
+argparser.add_argument('--n_epochs', type=int, default=20000)
 argparser.add_argument('--print_every', type=int, default=100)
-argparser.add_argument('--hidden_size', type=int, default=100)
+argparser.add_argument('--hidden_size', type=int, default=768)
+argparser.add_argument('--embedding_size', type=int, default=768 * 2)
 argparser.add_argument('--n_layers', type=int, default=2)
-argparser.add_argument('--learning_rate', type=float, default=0.01)
-argparser.add_argument('--chunk_len', type=int, default=200)
-argparser.add_argument('--batch_size', type=int, default=100)
+argparser.add_argument('--learning_rate', type=float, default=0.0005)
+argparser.add_argument('--chunk_len', type=int, default=128)
+argparser.add_argument('--batch_size', type=int, default=64)
 argparser.add_argument('--shuffle', action='store_true')
 argparser.add_argument('--cuda', action='store_true')
 args = argparser.parse_args()
@@ -52,7 +53,7 @@ def random_training_set(chunk_len, batch_size):
 def train(inp, target):
     hidden = decoder.init_hidden(args.batch_size)
     if args.cuda:
-        hidden = hidden.cuda()
+        hidden = tuple(x.cuda() for x in hidden)
     decoder.zero_grad()
     loss = 0
 
@@ -63,23 +64,23 @@ def train(inp, target):
     loss.backward()
     decoder_optimizer.step()
 
-    return loss.data[0] / args.chunk_len
+    return loss.item() / args.chunk_len
 
 def save():
     save_filename = os.path.splitext(os.path.basename(args.filename))[0] + '.pt'
-    torch.save(decoder, save_filename)
+    torch.save(decoder.state_dict(), save_filename)
     print('Saved as %s' % save_filename)
 
 # Initialize models and start training
-
 decoder = CharRNN(
-    n_characters,
+    args.embedding_size,
     args.hidden_size,
-    n_characters,
+    all_characters,
     model=args.model,
-    n_layers=args.n_layers,
+    n_layers=args.n_layers
 )
-decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=args.learning_rate)
+
+decoder_optimizer = torch.optim.AdamW(decoder.parameters(), lr=args.learning_rate)
 criterion = nn.CrossEntropyLoss()
 
 if args.cuda:
@@ -90,14 +91,14 @@ all_losses = []
 loss_avg = 0
 
 try:
-    print("Training for %d epochs..." % args.n_epochs)
+    print("Training for %d steps..." % args.n_epochs)
     for epoch in tqdm(range(1, args.n_epochs + 1)):
         loss = train(*random_training_set(args.chunk_len, args.batch_size))
         loss_avg += loss
 
         if epoch % args.print_every == 0:
             print('[%s (%d %d%%) %.4f]' % (time_since(start), epoch, epoch / args.n_epochs * 100, loss))
-            print(generate(decoder, 'Wh', 100, cuda=args.cuda), '\n')
+            print(generate(decoder, '\n', 256, cuda=args.cuda), '\n')
 
     print("Saving...")
     save()
